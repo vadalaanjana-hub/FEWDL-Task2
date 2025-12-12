@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MedicationReminder</title>
+  <style>
+    :root{
+      --bg:#f6f8fb; --card:#fff; --muted:#6b7280; --accent:#2563eb; --success:#10b981; --danger:#ef4444;
+      --glass: rgba(255,255,255,0.6);
+    }
+    [data-theme="dark"]{
+      --bg:#0b1020; --card:#0f1724; --muted:#9aa4b2; --accent:#60a5fa; --success:#34d399; --danger:#f87171; --glass: rgba(255,255,255,0.03);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial; background:linear-gradient(180deg,var(--bg),#e9eef8);min-height:100vh;color:var(--muted)}
+    .container{max-width:1100px;margin:24px auto;padding:18px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between}
+    h1{margin:0;font-size:20px;color:var(--accent)}
+    .controls{display:flex;gap:8px;align-items:center}
+    .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(16,24,40,0.06);}
+    .grid{display:grid;grid-template-columns:1fr 360px;gap:16px;margin-top:16px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+
+    /* Form */
+    form .row{display:flex;gap:8px;margin-bottom:8px}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+    input[type=text], input[type=time], select{width:100%;padding:8px;border-radius:8px;border:1px solid #e6e9ef;background:transparent}
+    input[type=number]{width:120px}
+    .btn{padding:8px 12px;border-radius:10px;border:0;background:var(--accent);color:white;cursor:pointer}
+    .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(0,0,0,0.06)}
+    .med-list{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+    .med{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:10px;border:1px dashed rgba(0,0,0,0.03)}
+    .med .meta{display:flex;align-items:center;gap:12px}
+    .pill{padding:6px 8px;border-radius:8px;background:var(--glass);color:var(--muted);font-weight:600}
+    .small{font-size:12px;color:var(--muted)}
+
+    /* Dashboard */
+    .stats{display:flex;gap:8px}
+    .stat{flex:1;padding:12px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);}
+    .progress{height:10px;background:#e6e9ef;border-radius:8px;overflow:hidden}
+    .progress > i{display:block;height:100%;background:var(--accent)}
+
+    /* Agenda */
+    .agenda{margin-top:12px}
+    .agenda ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+    .agenda li{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px}
+
+    footer{margin-top:16px;text-align:center;color:var(--muted);font-size:13px}
+
+    .darktoggle{display:inline-flex;align-items:center;gap:8px;padding:6px 8px;border-radius:999px;background:var(--glass);cursor:pointer}
+
+    .actions{display:flex;gap:8px}
+    .tiny{font-size:12px;padding:6px 8px;border-radius:8px}
+
+    /* modal */
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,0.5)}
+    .modal.open{display:flex}
+    .modal .card{width:560px;max-width:95%}
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>MedicationReminder</h1>
+        <div class="small">Manage meds • Schedule reminders • Track adherence</div>
+      </div>
+      <div class="controls">
+        <div class="darktoggle" id="themeToggle">🌙 <span id="themeLabel">Dark</span></div>
+        <button class="btn" id="exportCsv">Export CSV</button>
+        <button class="btn ghost" id="importBtn">Import</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <main>
+        <div class="card">
+          <h3 style="margin:0 0 8px 0">Add / Edit Medication</h3>
+          <form id="medForm">
+            <input type="hidden" id="medId" />
+            <div class="row">
+              <div style="flex:1">
+                <label for="name">Medication name</label>
+                <input id="name" type="text" placeholder="e.g. Metformin" required />
+              </div>
+              <div>
+                <label for="dose">Dose</label>
+                <input id="dose" type="text" placeholder="e.g. 500 mg" />
+              </div>
+            </div>
+            <div class="row">
+              <div style="flex:1">
+                <label for="times">Times (select or add times)</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input id="newTime" type="time" />
+                  <button class="btn" type="button" id="addTimeBtn">Add time</button>
+                </div>
+                <div id="timesList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+              </div>
+              <div style="width:160px">
+                <label for="days">Days</label>
+                <select id="days">
+                  <option value="daily">Daily</option>
+                  <option value="weekdays">Weekdays (Mon-Fri)</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+            </div>
+            <div class="row" style="align-items:center">
+              <div style="flex:1">
+                <label for="notes">Notes (optional)</label>
+                <input id="notes" type="text" placeholder="e.g. take with food" />
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label class="small">Sound</label>
+                <select id="tone" style="width:160px">
+                  <option value="">Default</option>
+                  <option value="beep">Beep</option>
+                  <option value="chime">Chime</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn" type="submit">Save Medication</button>
+              <button class="btn ghost" type="button" id="clearForm">Clear</button>
+            </div>
+          </form>
+
+          <div class="med-list" id="medList"></div>
+        </div>
+
+        <div class="card agenda" id="agendaCard">
+          <h3 style="margin:0 0 8px 0">Today's Agenda</h3>
+          <ul id="agendaList"></ul>
+        </div>
+      </main>
+
+      <aside>
+        <div class="card">
+          <h3 style="margin:0 0 8px 0">Dashboard</h3>
+          <div class="stats">
+            <div class="stat">
+              <div class="small">Medications</div>
+              <div style="font-size:22px" id="statMeds">0</div>
+            </div>
+            <div class="stat">
+              <div class="small">Today's doses</div>
+              <div style="font-size:22px" id="statDoses">0</div>
+            </div>
+            <div class="stat">
+              <div class="small">Adherence (30d)</div>
+              <div style="font-size:22px" id="statAdherence">0%</div>
+              <div class="progress" style="margin-top:8px"><i id="adherenceBar" style="width:0%"></i></div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <h4 style="margin:8px 0">Quick Actions</h4>
+            <div class="actions">
+              <button class="tiny" id="markAllTaken">Mark all due as taken</button>
+              <button class="tiny" id="snoozeAll">Snooze 10 min</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <h3 style="margin:0 0 8px 0">Settings & Export</h3>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label class="small">Export logs</label>
+            <button class="btn" id="exportLog">Export Logs (CSV)</button>
+            <button class="btn ghost" id="clearData">Clear All Data</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer>MedicationReminder • Works offline in browser • Uses notifications (allow when prompted)</footer>
+
+    <div class="modal" id="modal">
+      <div class="card">
+        <h3 id="modalTitle">Confirm</h3>
+        <p id="modalText">Are you sure?</p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+          <button class="btn ghost" id="modalCancel">Cancel</button>
+          <button class="btn" id="modalOk">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <audio id="sound-beep"><source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=" type="audio/wav"></audio>
+  <audio id="sound-chime"><source src="data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=" type="audio/wav"></audio>
+
+  <script>
+    // Basic app - single-file progressive web app behaviour
+    (function(){
+      const $ = sel => document.querySelector(sel);
+      const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+      // Data model in localStorage
+      const DB_KEY = 'med_reminder_db_v1';
+      let db = { meds: [], logs: [] };
+
+      function saveDB(){ localStorage.setItem(DB_KEY, JSON.stringify(db)); render(); }
+      function loadDB(){ const raw = localStorage.getItem(DB_KEY); if(raw) db = JSON.parse(raw); }
+
+      // Utils
+      function uid(){ return 'm'+Math.random().toString(36).slice(2,9); }
+      function nowISO(){ return new Date().toISOString(); }
+
+      // Permission for notifications
+      async function ensureNotifications(){ if('Notification' in window){ if(Notification.permission === 'default') await Notification.requestPermission(); } }
+
+      // Time handling
+      function timeStrToDate(timeStr, date = new Date()){
+        const [hh,mm] = timeStr.split(':').map(Number);
+        const d = new Date(date);
+        d.setHours(hh,mm,0,0); return d;
+      }
+
+      // CRUD
+      function addMed(med){ med.id = uid(); db.meds.push(med); saveDB(); }
+      function updateMed(id, patch){ const m = db.meds.find(x=>x.id===id); Object.assign(m, patch); saveDB(); }
+      function deleteMed(id){ db.meds = db.meds.filter(x=>x.id!==id); saveDB(); }
+
+      // Rendering
+      function render(){
+        // Med list
+        const medList = $('#medList'); medList.innerHTML='';
+        db.meds.forEach(m=>{
+          const el = document.createElement('div'); el.className='med';
+          const meta = document.createElement('div'); meta.className='meta';
+          meta.innerHTML = `<div style="min-width:90px"><strong style="color:var(--accent)">${m.name}</strong><div class="small">${m.dose||''}</div></div>`;
+          const times = document.createElement('div'); times.innerHTML = `<div class="pill">${m.times.join(', ')}</div><div class="small">${m.days||'daily'}</div>`;
+          meta.appendChild(times);
+          const actions = document.createElement('div');
+          actions.innerHTML = `<button class="tiny" data-id="${m.id}" data-act="edit">Edit</button> <button class="tiny" data-id="${m.id}" data-act="delete">Delete</button>`;
+          el.appendChild(meta); el.appendChild(actions);
+          medList.appendChild(el);
+        });
+
+        // Stats
+        $('#statMeds').textContent = db.meds.length;
+        const todays = computeTodaysDoses();
+        $('#statDoses').textContent = todays.length;
+
+        // Adherence last 30 days
+        const adh = computeAdherence(30);
+        $('#statAdherence').textContent = Math.round(adh)+'%';
+        $('#adherenceBar').style.width = Math.round(adh)+'%';
+
+        // Agenda
+        const agenda = $('#agendaList'); agenda.innerHTML='';
+        todays.forEach(item=>{
+          const li = document.createElement('li');
+          li.innerHTML = `<div><strong>${item.time}</strong> · <span class="small">${item.med.name} ${item.med.dose||''}</span></div>
+                          <div><button class="tiny" data-id="${item.id}" data-act="taken">Taken</button> <button class="tiny" data-id="${item.id}" data-act="snooze">Snooze</button></div>`;
+          agenda.appendChild(li);
+        });
+      }
+
+      // Compute doses scheduled for today
+      function computeTodaysDoses(){
+        const out=[]; const today = new Date();
+        db.meds.forEach(m=>{
+          // days: daily, weekdays, custom(not implemented)
+          const include = (m.days==='weekdays')? (today.getDay()!==0 && today.getDay()!==6) : true;
+          if(!include) return;
+          (m.times||[]).forEach(t=>{
+            out.push({ id: m.id+'|'+t, med:m, time:t });
+          });
+        });
+        // sort by time
+        out.sort((a,b)=> a.time.localeCompare(b.time));
+        return out;
+      }
+
+      // Logs: mark taken
+      function markTaken(itemId){ const [mid, time] = itemId.split('|'); db.logs.push({ medId: mid, time, at: nowISO() }); saveDB(); }
+
+      function computeAdherence(days){
+        // approximate: count taken doses in last N days divided by expected doses
+        const end = new Date(); const start = new Date(); start.setDate(end.getDate() - days + 1);
+        // expected: for each day count doses
+        let expected=0, taken=0;
+        for(let d = new Date(start); d<=end; d.setDate(d.getDate()+1)){
+          db.meds.forEach(m=>{
+            const include = (m.days==='weekdays')? (d.getDay()!==0 && d.getDay()!==6) : true;
+            if(include) expected += (m.times||[]).length;
+          });
+        }
+        db.logs.forEach(l=>{
+          const at = new Date(l.at); if(at >= start && at <= end) taken++;
+        });
+        if(expected===0) return 0; return (taken/expected)*100;
+      }
+
+      // Scheduler loop (runs every 15s) - checks for due meds in the next minute
+      let snoozedUntil = null;
+      function schedulerTick(){
+        if(snoozedUntil && new Date() < snoozedUntil) return;
+        const now = new Date();
+        const nowMin = now.getHours().toString().padStart(2,'0')+':'+ now.getMinutes().toString().padStart(2,'0');
+        db.meds.forEach(m=>{
+          (m.times||[]).forEach(t=>{
+            if(t===nowMin){ // due now
+              const key = 'notified|'+m.id+'|'+t+'|'+(new Date()).toDateString();
+              if(!localStorage.getItem(key)){
+                notifyDue(m,t); localStorage.setItem(key,'1');
+              }
+            }
+          });
+        });
+      }
+
+      function notifyDue(med,time){
+        // Browser Notification
+        if('Notification' in window && Notification.permission === 'granted'){
+          const n = new Notification('Medication due: '+med.name, { body: `${med.dose||''} • ${time}` });
+          n.onclick = ()=> window.focus();
+        }
+        // Play sound
+        const tone = med.tone || '';
+        if(tone){ const audio = document.getElementById('sound-'+tone); if(audio) audio.play().catch(()=>{}); }
+        // Add to UI (log as ringing)
+        showModal(`Time to take ${med.name} (${med.dose||''}) at ${time}`, ()=>{ markTaken(med.id+'|'+time); });
+      }
+
+      // Modal helper
+      function showModal(text, okCb){ const modal = $('#modal'); $('#modalText').textContent = text; modal.classList.add('open');
+        $('#modalOk').onclick = ()=>{ modal.classList.remove('open'); okCb && okCb(); };
+        $('#modalCancel').onclick = ()=> modal.classList.remove('open');
+      }
+
+      // Form handling
+      $('#addTimeBtn').addEventListener('click', ()=>{
+        const t = $('#newTime').value; if(!t) return;
+        const list = $('#timesList');
+        if(Array.from(list.children).some(c=>c.dataset.time===t)) return;
+        const chip = document.createElement('div'); chip.className='pill'; chip.style.cursor='pointer'; chip.dataset.time=t; chip.textContent = t + ' ✖';
+        chip.onclick = ()=> chip.remove();
+        list.appendChild(chip);
+        $('#newTime').value='';
+      });
+
+      $('#medForm').addEventListener('submit', e=>{
+        e.preventDefault();
+        const id = $('#medId').value; const name = $('#name').value.trim(); const dose = $('#dose').value.trim();
+        const times = Array.from($('#timesList').children).map(c=>c.dataset.time);
+        const days = $('#days').value; const notes = $('#notes').value; const tone = $('#tone').value;
+        if(!name || times.length===0){ alert('Please add a name and at least one time'); return; }
+        const med = { name, dose, times, days, notes, tone };
+        if(id){ updateMed(id, med); } else addMed(med);
+        $('#medForm').reset(); $('#timesList').innerHTML=''; $('#medId').value='';
+      });
+
+      // Click handlers for med list and agenda
+      document.body.addEventListener('click', e=>{
+        const btn = e.target.closest('button'); if(!btn) return; const act = btn.dataset.act; const id = btn.dataset.id;
+        if(act==='edit'){ const m = db.meds.find(x=>x.id===id); if(!m) return; $('#medId').value = m.id; $('#name').value = m.name; $('#dose').value = m.dose; $('#notes').value = m.notes || ''; $('#tone').value = m.tone||''; $('#days').value = m.days||'daily'; $('#timesList').innerHTML = ''; (m.times||[]).forEach(t=>{ const chip=document.createElement('div'); chip.className='pill'; chip.dataset.time=t; chip.textContent=t+' ✖'; chip.onclick=()=>chip.remove(); $('#timesList').appendChild(chip); }); window.scrollTo({top:0,behavior:'smooth'}); }
+        if(act==='delete'){ confirmModal('Delete medication?', ()=>{ deleteMed(id); }); }
+        if(act==='taken'){ markTaken(id); }
+        if(act==='snooze'){ snoozedUntil = new Date(Date.now()+10*60*1000); alert('Snoozed 10 minutes'); }
+      });
+
+      function confirmModal(text, okCb){ $('#modalTitle').textContent='Confirm'; $('#modalText').textContent=text; $('#modal').classList.add('open'); $('#modalOk').onclick = ()=>{ $('#modal').classList.remove('open'); okCb && okCb(); }; $('#modalCancel').onclick = ()=> $('#modal').classList.remove('open'); }
+
+      // Quick actions
+      $('#markAllTaken').addEventListener('click', ()=>{ computeTodaysDoses().forEach(it=>markTaken(it.id)); alert('Marked all due as taken'); });
+      $('#snoozeAll').addEventListener('click', ()=>{ snoozedUntil = new Date(Date.now()+10*60*1000); alert('Snoozed 10 minutes'); });
+
+      // Export CSV
+      function exportCSV(){
+        let rows = [['medId','name','dose','time','takenAt']];
+        db.logs.forEach(l=>{
+          const med = db.meds.find(m=>m.id===l.medId) || {};
+          rows.push([l.medId, med.name||'', med.dose||'', l.time, l.at]);
+        });
+        const csv = rows.map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+        const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href=url; a.download='med_logs.csv'; a.click(); URL.revokeObjectURL(url);
+      }
+      $('#exportLog').addEventListener('click', exportCSV);
+      $('#exportCsv').addEventListener('click', ()=>{
+        // export medication list
+        let rows = [['id','name','dose','times','days','notes','tone']];
+        db.meds.forEach(m=> rows.push([m.id,m.name,m.dose, (m.times||[]).join('|'), m.days||'', m.notes||'', m.tone||'']));
+        const csv = rows.map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');
+        const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href=url; a.download='medications.csv'; a.click(); URL.revokeObjectURL(url);
+      });
+
+      $('#clearData').addEventListener('click', ()=>{ confirmModal('Clear all medications and logs? This cannot be undone.', ()=>{ db = {meds:[], logs:[]}; saveDB(); }); });
+
+      $('#importBtn').addEventListener('click', ()=>{ const txt = prompt('Paste medications CSV (id,name,dose,times,days,notes,tone)'); if(!txt) return; const lines = txt.split('\n').slice(1); lines.forEach(l=>{ const parts = l.split(','); if(parts.length>=3){ const name = parts[1].replace(/"/g,'').trim(); const dose = parts[2].replace(/"/g,'').trim(); const times = (parts[3]||'').replace(/"/g,'').split('|').filter(Boolean); addMed({name,dose,times,days:parts[4]||'daily'}); } }); alert('Imported (best effort)'); });
+
+      $('#clearForm').addEventListener('click', ()=>{ $('#medForm').reset(); $('#timesList').innerHTML=''; $('#medId').value=''; });
+
+      // theme
+      const themeToggle = $('#themeToggle'); themeToggle.addEventListener('click', ()=>{
+        const root = document.documentElement; if(root.getAttribute('data-theme')==='dark'){ root.removeAttribute('data-theme'); $('#themeLabel').textContent='Dark'; } else { root.setAttribute('data-theme','dark'); $('#themeLabel').textContent='Light'; }
+      });
+
+      // load & init
+      loadDB(); render(); ensureNotifications(); setInterval(schedulerTick, 15000); // check every 15s
+
+      // initial scheduler tick to catch immediate times
+      schedulerTick();
+
+      // ask for permission on first load
+      if('Notification' in window && Notification.permission === 'default'){
+        const ask = confirm('Enable browser notifications for reminders?'); if(ask) Notification.requestPermission();
+      }
+
+      // prevent accidental data loss
+      window.addEventListener('beforeunload', e=>{ if(db.meds.length || db.logs.length){ e.returnValue = 'You have saved data in MedicationReminder.'; } });
+
+    })();
+  </script>
+</body>
+</html>
